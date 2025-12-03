@@ -7,26 +7,24 @@ WORKDIR /app
 # Copy requirements
 COPY requirements.txt .
 
-# Install dependencies to a local directory
-RUN pip install --no-cache-dir --user -r requirements.txt
+# Install dependencies to /usr/local
+RUN pip install --no-cache-dir -r requirements.txt
 
 
-# Final stage - distroless-style minimal image
+# Final stage - minimal image
 FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
 
 # Copy Python dependencies from builder
-COPY --from=builder /root/.local /root/.local
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application files
 COPY bot.py .
 COPY weather_service.py .
 COPY gemini_service.py .
-
-# Make sure scripts are in PATH
-ENV PATH=/root/.local/bin:$PATH
 
 # Run as non-root user for security
 RUN useradd -m -u 1000 botuser && \
@@ -34,7 +32,7 @@ RUN useradd -m -u 1000 botuser && \
 
 USER botuser
 
-# Health check (optional)
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
