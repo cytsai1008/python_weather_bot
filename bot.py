@@ -259,7 +259,7 @@ async def create_weather_embed(location: str, weather_service, gemini_service) -
             inline=False
         )
 
-    embed.set_footer(text="資料來源: 中央氣象署開放資料平台")
+    embed.set_footer(text="資料來源: 中央氣象署開放資料平台 | AI 生成內容僅供參考")
 
     return embed
 
