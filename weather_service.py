@@ -1,6 +1,6 @@
 import aiohttp
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict
 
 
@@ -25,9 +25,44 @@ class WeatherService:
         Returns:
             Dictionary containing weather data or None if not found
         """
+        # Get current time in UTC+8 (Taiwan timezone)
+        taiwan_tz = timezone(timedelta(hours=8))
+        current_time = datetime.now(taiwan_tz)
+
+        # Determine if it's daytime (6:00-17:59) or nighttime (18:00-5:59)
+        is_daytime = 6 <= current_time.hour < 18
+
+        # Adjust start time to catch the current period
+        # API periods start at 06:00 and 18:00, so we need to request from the period start
+        if is_daytime:
+            # Start from 06:00 today to catch current daytime period
+            start_time = current_time.replace(hour=6, minute=0, second=0, microsecond=0)
+            # Fetch until tomorrow 00:00 (covers today + tonight)
+            tomorrow = current_time.date() + timedelta(days=1)
+            end_time = datetime.combine(tomorrow, datetime.min.time(), tzinfo=taiwan_tz)
+        else:
+            # Start from 18:00 today to catch current night period
+            if current_time.hour >= 18:
+                # After 6 PM - start from 18:00 today
+                start_time = current_time.replace(hour=18, minute=0, second=0, microsecond=0)
+            else:
+                # Before 6 AM - start from 18:00 yesterday
+                yesterday = current_time.date() - timedelta(days=1)
+                start_time = datetime.combine(yesterday, datetime.min.time(), tzinfo=taiwan_tz).replace(hour=18)
+
+            # Fetch until day after tomorrow 00:00 (covers tonight + all of tomorrow)
+            day_after_tomorrow = current_time.date() + timedelta(days=2)
+            end_time = datetime.combine(day_after_tomorrow, datetime.min.time(), tzinfo=taiwan_tz)
+
+        # Format times for API (format: yyyy-MM-ddThh:mm:ss)
+        time_from = start_time.strftime('%Y-%m-%dT%H:%M:%S')
+        time_to = end_time.strftime('%Y-%m-%dT%H:%M:%S')
+
         params = {
             'Authorization': self.api_key,
-            'locationName': location
+            'locationName': location,
+            'timeFrom': time_from,
+            'timeTo': time_to
         }
 
         try:
@@ -51,7 +86,19 @@ class WeatherService:
             return None
 
     def _parse_weather_data(self, data: dict, location: str) -> Dict:
-        """Parse CWA API response into simplified weather data"""
+        """
+        Parse CWA API response into simplified weather data
+
+        The API returns 36-hour forecast data divided into 3 time periods (each ~12 hours)
+        Timestamps are in Taiwan time (UTC+8) format: "YYYY-MM-DD HH:MM:SS"
+
+        Weather elements:
+        - Wx: Weather phenomenon (天氣現象)
+        - PoP: Probability of Precipitation (降雨機率)
+        - MinT: Minimum Temperature (最低溫度)
+        - MaxT: Maximum Temperature (最高溫度)
+        - CI: Comfort Index (舒適度)
+        """
 
         try:
             records = data['records']['location']
@@ -68,43 +115,83 @@ class WeatherService:
 
             weather_elements = location_data['weatherElement']
 
-            # Extract weather information
-            weather_info = {}
 
-            # Get today's forecast (first time period)
-            for element in weather_elements:
-                element_name = element['elementName']
-                time_data = element['time'][0]  # First time period (today)
+            # Extract weather information for all 3 time periods
+            weather_info = {
+                'periods': []  # Will store data for each time period
+            }
 
-                if element_name == 'Wx':
-                    # Weather description
-                    weather_info['weather_description'] = time_data['parameter']['parameterName']
+            # Get the number of time periods (should be 3 for 36-hour forecast)
+            num_periods = len(weather_elements[0]['time']) if weather_elements else 0
 
-                elif element_name == 'PoP':
-                    # Probability of Precipitation
-                    weather_info['pop'] = time_data['parameter']['parameterName']
+            # Extract data for each time period
+            for period_idx in range(num_periods):
+                period_data = {}
 
-                elif element_name == 'MinT':
-                    # Minimum temperature
-                    weather_info['low_temp'] = time_data['parameter']['parameterName']
+                for element in weather_elements:
+                    element_name = element['elementName']
+                    time_data = element['time'][period_idx]
 
-                elif element_name == 'MaxT':
-                    # Maximum temperature
-                    weather_info['high_temp'] = time_data['parameter']['parameterName']
+                    if element_name == 'Wx':
+                        # Weather description
+                        period_data['weather_description'] = time_data['parameter']['parameterName']
 
-                elif element_name == 'CI':
-                    # Comfort Index
-                    weather_info['comfort'] = time_data['parameter']['parameterName']
+                    elif element_name == 'PoP':
+                        # Probability of Precipitation
+                        period_data['pop'] = time_data['parameter']['parameterName']
 
-            # Add time period
-            weather_info['start_time'] = time_data.get('startTime', '')
-            weather_info['end_time'] = time_data.get('endTime', '')
+                    elif element_name == 'MinT':
+                        # Minimum temperature
+                        period_data['low_temp'] = time_data['parameter']['parameterName']
 
-            # Add description
-            start_time = datetime.fromisoformat(weather_info['start_time'].replace('Z', '+00:00'))
-            end_time = datetime.fromisoformat(weather_info['end_time'].replace('Z', '+00:00'))
+                    elif element_name == 'MaxT':
+                        # Maximum temperature
+                        period_data['high_temp'] = time_data['parameter']['parameterName']
 
-            weather_info['description'] = f"預報時間: {start_time.strftime('%m/%d %H:%M')} - {end_time.strftime('%m/%d %H:%M')}"
+                    elif element_name == 'CI':
+                        # Comfort Index
+                        period_data['comfort'] = time_data['parameter']['parameterName']
+
+                # Add time period
+                period_data['start_time'] = time_data.get('startTime', '')
+                period_data['end_time'] = time_data.get('endTime', '')
+
+                # Parse timestamps (API returns in format "YYYY-MM-DD HH:MM:SS" already in Taiwan time)
+                start_time_tw = datetime.strptime(period_data['start_time'], '%Y-%m-%d %H:%M:%S')
+                end_time_tw = datetime.strptime(period_data['end_time'], '%Y-%m-%d %H:%M:%S')
+
+                # Get current time in Taiwan timezone (UTC+8)
+                taiwan_tz = timezone(timedelta(hours=8))
+                current_time_tw = datetime.now(taiwan_tz).replace(tzinfo=None)
+
+                # Determine period label based on date and time
+                hour = start_time_tw.hour
+                is_daytime = 6 <= hour < 18
+
+                # Check if it's today, tonight, or tomorrow
+                if start_time_tw.date() == current_time_tw.date():
+                    # Same date
+                    if is_daytime:
+                        period_label = "今天白天"
+                    else:
+                        period_label = "今晚"
+                elif start_time_tw.date() == (current_time_tw + timedelta(days=1)).date():
+                    # Tomorrow
+                    if is_daytime:
+                        period_label = "明天白天"
+                    else:
+                        period_label = "明晚"
+                else:
+                    # Generic labels
+                    if is_daytime:
+                        period_label = "白天"
+                    else:
+                        period_label = "晚上"
+
+                period_data['period_label'] = period_label
+                period_data['description'] = f"{start_time_tw.strftime('%m/%d %H:%M')} - {end_time_tw.strftime('%m/%d %H:%M')}"
+
+                weather_info['periods'].append(period_data)
 
             return weather_info
 

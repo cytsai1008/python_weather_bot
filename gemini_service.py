@@ -20,13 +20,14 @@ class GeminiService:
 
         Args:
             location: Location name
-            weather_data: Dictionary containing weather information
+            weather_data: Dictionary containing combined period information
+                         Format: {'location': str, 'periods': [period1, period2]}
 
         Returns:
             String with AI-generated suggestions or None if error
         """
         try:
-            # Construct prompt for Gemini
+            # Construct prompt for Gemini with combined period data
             prompt = self._create_prompt(location, weather_data)
 
             # Generate response
@@ -45,27 +46,40 @@ class GeminiService:
             return self.get_simple_suggestion(weather_data)
 
     def _create_prompt(self, location: str, weather_data: Dict) -> str:
-        """Create a detailed prompt for Gemini"""
+        """Create a detailed prompt for Gemini with combined day/night periods"""
 
-        high_temp = weather_data.get('high_temp', 'N/A')
-        low_temp = weather_data.get('low_temp', 'N/A')
-        pop = weather_data.get('pop', 'N/A')
-        weather_desc = weather_data.get('weather_description', 'N/A')
-        comfort = weather_data.get('comfort', 'N/A')
+        location = weather_data.get('location', location)
+        periods = weather_data.get('periods', [])
+
+        # Build period information
+        period_info = []
+        for period in periods:
+            label = period.get('period_label', '')
+            weather_desc = period.get('weather_description', 'N/A')
+            high_temp = period.get('high_temp', 'N/A')
+            low_temp = period.get('low_temp', 'N/A')
+            pop = period.get('pop', 'N/A')
+            comfort = period.get('comfort', 'N/A')
+
+            period_text = f"""【{label}】
+天氣: {weather_desc}
+溫度: {low_temp}°C ~ {high_temp}°C
+降雨機率: {pop}%
+舒適度: {comfort}"""
+            period_info.append(period_text)
+
+        periods_text = "\n\n".join(period_info)
 
         prompt = f"""你是一個專業的氣象顧問和生活建議專家。根據以下的天氣資料，請用繁體中文提供簡潔實用的生活建議。
 
 地點: {location}
-高溫: {high_temp}°C
-低溫: {low_temp}°C
-降雨機率: {pop}%
-天氣狀況: {weather_desc}
-舒適度: {comfort}
 
-請提供以下方面的建議（保持簡潔，每項2-3行）：
+{periods_text}
+
+請根據這兩個時段的天氣差異，提供以下方面的建議（保持簡潔，每項2-3行）：
 1. 🌡️ 體感與舒適度
-2. 👔 穿著建議
-3. ☂️ 外出準備
+2. 👔 穿著建議（如果日夜溫差大，請提醒洋蔥式穿搭）
+3. ☂️ 外出準備（如果不同時段降雨機率不同，請特別提醒）
 4. 💡 生活小提示
 
 請用友善、口語化的方式回答，並使用適當的emoji讓內容更生動。保持回答簡潔明瞭，總長度控制在250字以內。"""
@@ -130,9 +144,20 @@ class GeminiService:
     def get_simple_suggestion(self, weather_data: Dict) -> str:
         """
         Fallback method to provide simple suggestions without AI
+        Handles combined period data structure
         """
-        high_temp = int(weather_data.get('high_temp', 25))
-        pop = int(weather_data.get('pop', 0))
+        periods = weather_data.get('periods', [])
+
+        if not periods:
+            return "無法提供建議"
+
+        # Get data from first period for general suggestions
+        first_period = periods[0]
+        high_temp = int(first_period.get('high_temp', 25))
+        low_temp = int(first_period.get('low_temp', 15))
+
+        # Check max rain probability across all periods
+        max_pop = max([int(p.get('pop', 0)) for p in periods])
 
         suggestions = []
 
@@ -150,10 +175,26 @@ class GeminiService:
             suggestions.append("🌡️ 天氣偏冷，注意保暖")
             suggestions.append("🧥 建議穿著外套或厚衣物")
 
-        # Rain-based suggestions
-        if pop >= 70:
+        # Temperature difference check
+        if len(periods) >= 2:
+            temp_diff = abs(int(periods[0].get('high_temp', 20)) - int(periods[1].get('high_temp', 20)))
+            if temp_diff >= 5:
+                suggestions.append("🌡️ 日夜溫差較大，建議洋蔥式穿搭")
+
+        # Rain-based suggestions (check all periods)
+        if max_pop >= 70:
             suggestions.append("☂️ 降雨機率高，務必攜帶雨具")
-        elif pop >= 30:
+        elif max_pop >= 30:
             suggestions.append("☂️ 可能下雨，建議帶傘備用")
+
+        # Check if rain differs between periods
+        if len(periods) >= 2:
+            pop1 = int(periods[0].get('pop', 0))
+            pop2 = int(periods[1].get('pop', 0))
+            if abs(pop1 - pop2) >= 30:
+                if pop2 > pop1:
+                    suggestions.append(f"☂️ {periods[1].get('period_label', '稍後')}降雨機率較高，記得帶傘")
+                else:
+                    suggestions.append(f"☀️ {periods[1].get('period_label', '稍後')}天氣會轉好")
 
         return "\n".join(suggestions)

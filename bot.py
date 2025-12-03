@@ -184,15 +184,23 @@ async def create_weather_embed(location: str, weather_service, gemini_service) -
     if not weather_data:
         raise ValueError(f"無法取得 {location} 的天氣資料")
 
-    # Get Gemini suggestions
+    # Prepare combined period data for Gemini (both day and night periods)
+    periods = weather_data.get('periods', [])
+    combined_data = {
+        'location': location,
+        'periods': periods[:2]  # Pass both day and night periods
+    }
+
+    # Get Gemini suggestions with both periods
     gemini_suggestion = await gemini_service.get_weather_suggestions(
-        location, weather_data
+        location, combined_data
     )
 
-    # Get dynamic weather emoji
+    # Get dynamic weather emoji from first period
+    first_period = periods[0] if periods else {}
     weather_emoji = get_weather_emoji(
-        weather_data.get('weather_description', ''),
-        weather_data.get('pop', '0')
+        first_period.get('weather_description', ''),
+        first_period.get('pop', '0')
     )
 
     # Get English name
@@ -200,41 +208,46 @@ async def create_weather_embed(location: str, weather_service, gemini_service) -
     title = f"{weather_emoji} {location}"
     if english_name:
         title += f" ({english_name})"
-    title += " 今日天氣預報"
+    title += " 天氣預報"
 
     # Create embed
     embed = discord.Embed(
         title=title,
         color=discord.Color.blue(),
-        description=weather_data.get('description', '')
+        description="今日與今晚天氣預報"
     )
 
-    # Add weather fields
-    if 'high_temp' in weather_data:
-        embed.add_field(
-            name="🌡️ 溫度",
-            value=f"高溫: {weather_data['high_temp']}°C\n低溫: {weather_data['low_temp']}°C",
-            inline=True
+    # Add weather information for first 2 time periods only
+    # (Today + Tonight if daytime, Tonight + Tomorrow if nighttime)
+    periods = weather_data.get('periods', [])[:2]  # Only show first 2 periods
+
+    for idx, period in enumerate(periods):
+        period_label = period.get('period_label', f"時段 {idx + 1}")
+
+        # Determine emoji based on period label
+        if "白天" in period_label or "今天" in period_label:
+            period_emoji = "☀️"
+        elif "晚" in period_label:
+            period_emoji = "🌙"
+        else:
+            period_emoji = "⏰"
+
+        # Get weather emoji for this period
+        period_weather_emoji = get_weather_emoji(
+            period.get('weather_description', ''),
+            period.get('pop', '0')
         )
 
-    if 'pop' in weather_data:
-        embed.add_field(
-            name="☔ 降雨機率",
-            value=f"{weather_data['pop']}%",
-            inline=True
-        )
+        # Build the field content
+        field_content = f"**時間:** {period.get('description', '')}\n"
+        field_content += f"**天氣:** {period_weather_emoji} {period.get('weather_description', 'N/A')}\n"
+        field_content += f"**溫度:** {period.get('low_temp', 'N/A')}°C ~ {period.get('high_temp', 'N/A')}°C\n"
+        field_content += f"**降雨機率:** ☔ {period.get('pop', 'N/A')}%\n"
+        field_content += f"**舒適度:** {period.get('comfort', 'N/A')}"
 
-    if 'comfort' in weather_data:
         embed.add_field(
-            name="😌 舒適度",
-            value=weather_data['comfort'],
-            inline=True
-        )
-
-    if 'weather_description' in weather_data:
-        embed.add_field(
-            name="☁️ 天氣狀況",
-            value=weather_data['weather_description'],
+            name=f"{period_emoji} {period_label}",
+            value=field_content,
             inline=False
         )
 
@@ -308,7 +321,7 @@ async def location_autocomplete(
     return choices[:25]
 
 
-@client.tree.command(name="weather", description="查詢台灣各縣市天氣預報 / Get Taiwan weather forecast")
+@client.tree.command(name="weather", description="查詢台灣各縣市今日與今晚天氣 / Get Taiwan weather forecast")
 @app_commands.allowed_installs(guilds=True, users=True)
 @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
 @app_commands.describe(location="選擇縣市 (可輸入中文或英文) / Select location (Chinese or English)")
@@ -359,7 +372,7 @@ async def help_command(interaction: discord.Interaction):
     """Show help information"""
     embed = discord.Embed(
         title="🤖 台灣天氣預報機器人",
-        description="提供台灣各縣市的天氣預報與AI生活建議",
+        description="提供台灣各縣市今日與今晚天氣預報與AI生活建議",
         color=discord.Color.green()
     )
 
@@ -376,7 +389,7 @@ async def help_command(interaction: discord.Interaction):
 
     embed.add_field(
         name="📊 提供資訊",
-        value="• 高低溫度\n• 降雨機率\n• 天氣狀況\n• 舒適度\n• AI生活建議",
+        value="• 今日與今晚天氣預報\n• 各時段高低溫度\n• 降雨機率\n• 天氣狀況\n• 舒適度\n• AI生活建議",
         inline=False
     )
 
