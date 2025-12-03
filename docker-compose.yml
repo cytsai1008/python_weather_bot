@@ -1,0 +1,18 @@
+# Production compose file - uses pre-built image from GHCR
+# Usage: docker-compose -f docker-compose.prod.yml up -d
+
+services:
+  weather-bot:
+    image: ghcr.io/cytsai1008/python_weather_bot:latest
+    container_name: taiwan-weather-bot
+    restart: unless-stopped
+
+    # Load environment variables from .env file
+    env_file:
+      - .env
+
+    # Alternative: specify environment variables directly
+    # environment:
+    #   DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+    #   CWA_API_KEY: ${CWA_API_KEY}
+    #   GEMINI_API_KEY: ${GEMINI_API_KEY}
