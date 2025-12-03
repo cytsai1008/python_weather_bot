@@ -58,6 +58,10 @@ class WeatherService:
         time_from = start_time.strftime('%Y-%m-%dT%H:%M:%S')
         time_to = end_time.strftime('%Y-%m-%dT%H:%M:%S')
 
+        # Debug: Print request timing
+        print(f"[DEBUG] Current time: {current_time.strftime('%Y-%m-%d %H:%M:%S')} (hour={current_time.hour}, is_daytime={is_daytime})")
+        print(f"[DEBUG] Requesting periods from {time_from} to {time_to}")
+
         params = {
             'Authorization': self.api_key,
             'locationName': location,
@@ -166,32 +170,35 @@ class WeatherService:
 
                 # Determine period label based on date and time
                 hour = start_time_tw.hour
-                is_daytime = 6 <= hour < 18
+                start_date = start_time_tw.date()
+                current_date = current_time_tw.date()
+                date_diff = (start_date - current_date).days
 
-                # Check if it's today, tonight, or tomorrow
-                # Special handling for periods that span midnight (18:00-06:00)
-                if start_time_tw.date() == current_time_tw.date():
-                    # Period starts on same date as now
-                    if is_daytime:
+                # Debug: Print labeling logic
+                print(f"[DEBUG] Period {period_idx + 1}: start={start_time_tw}, current={current_time_tw}")
+                print(f"[DEBUG] start_date={start_date}, current_date={current_date}, date_diff={date_diff}, hour={hour}")
+
+                # Simplified logic based on period start hour and date difference
+                if 6 <= hour < 18:
+                    # Daytime period (06:00-18:00)
+                    if date_diff == 0:
                         period_label = "今天白天"
-                    else:
-                        period_label = "今晚"
-                elif start_time_tw.date() == (current_time_tw.date() - timedelta(days=1)) and not is_daytime:
-                    # Period started yesterday - after midnight, it becomes "last night"
-                    period_label = "昨晚"
-                elif start_time_tw.date() == (current_time_tw + timedelta(days=1)).date():
-                    # Period starts tomorrow (next calendar day)
-                    if is_daytime:
+                    elif date_diff == 1:
                         period_label = "明天白天"
                     else:
-                        period_label = "明晚"
-                else:
-                    # Generic labels for other cases
-                    if is_daytime:
                         period_label = "白天"
+                else:
+                    # Night period (18:00-06:00)
+                    if date_diff == 0:
+                        period_label = "今晚"
+                    elif date_diff == -1:
+                        period_label = "昨晚"
+                    elif date_diff == 1:
+                        period_label = "明晚"
                     else:
                         period_label = "晚上"
 
+                print(f"[DEBUG] Assigned label: {period_label}\n")
                 period_data['period_label'] = period_label
                 period_data['description'] = f"{start_time_tw.strftime('%m/%d %H:%M')} - {end_time_tw.strftime('%m/%d %H:%M')}"
 
