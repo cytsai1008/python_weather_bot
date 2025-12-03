@@ -177,12 +177,8 @@ class WeatherService:
                     else:
                         period_label = "今晚"
                 elif start_time_tw.date() == (current_time_tw.date() - timedelta(days=1)) and not is_daytime:
-                    # Period started yesterday but we're currently in it (after midnight, before 6 AM)
-                    # This is the night period spanning midnight
-                    if current_time_tw.hour < 6:
-                        period_label = "今晚"  # We're currently in this night period
-                    else:
-                        period_label = "昨晚"  # Past night period
+                    # Period started yesterday - after midnight, it becomes "last night"
+                    period_label = "昨晚"
                 elif start_time_tw.date() == (current_time_tw + timedelta(days=1)).date():
                     # Period starts tomorrow (next calendar day)
                     if is_daytime:
