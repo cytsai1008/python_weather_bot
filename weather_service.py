@@ -169,20 +169,36 @@ class WeatherService:
                 is_daytime = 6 <= hour < 18
 
                 # Check if it's today, tonight, or tomorrow
+                # Special handling for periods that span midnight (18:00-06:00)
                 if start_time_tw.date() == current_time_tw.date():
-                    # Same date
+                    # Period starts on same date as now
                     if is_daytime:
                         period_label = "今天白天"
                     else:
                         period_label = "今晚"
-                elif start_time_tw.date() == (current_time_tw + timedelta(days=1)).date():
-                    # Tomorrow
-                    if is_daytime:
-                        period_label = "明天白天"
+                elif start_time_tw.date() == (current_time_tw.date() - timedelta(days=1)) and not is_daytime:
+                    # Period started yesterday but we're currently in it (after midnight, before 6 AM)
+                    # This is the night period spanning midnight
+                    if current_time_tw.hour < 6:
+                        period_label = "今晚"  # We're currently in this night period
                     else:
-                        period_label = "明晚"
+                        period_label = "昨晚"  # Past night period
+                elif start_time_tw.date() == (current_time_tw + timedelta(days=1)).date():
+                    # Period starts tomorrow
+                    if is_daytime:
+                        # After midnight (00:00-05:59), tomorrow's daytime becomes today's daytime
+                        if current_time_tw.hour < 6:
+                            period_label = "今天白天"
+                        else:
+                            period_label = "明天白天"
+                    else:
+                        # After midnight (00:00-05:59), tomorrow's night becomes tonight
+                        if current_time_tw.hour < 6:
+                            period_label = "今晚"
+                        else:
+                            period_label = "明晚"
                 else:
-                    # Generic labels
+                    # Generic labels for other cases
                     if is_daytime:
                         period_label = "白天"
                     else:
