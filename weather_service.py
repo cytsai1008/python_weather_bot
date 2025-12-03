@@ -50,9 +50,9 @@ class WeatherService:
                 yesterday = current_time.date() - timedelta(days=1)
                 start_time = datetime.combine(yesterday, datetime.min.time(), tzinfo=taiwan_tz).replace(hour=18)
 
-            # Fetch until day after tomorrow 00:00 (covers tonight + all of tomorrow)
-            day_after_tomorrow = current_time.date() + timedelta(days=2)
-            end_time = datetime.combine(day_after_tomorrow, datetime.min.time(), tzinfo=taiwan_tz)
+            # Fetch until tomorrow 00:00 (covers tonight + today's daytime)
+            tomorrow = current_time.date() + timedelta(days=1)
+            end_time = datetime.combine(tomorrow, datetime.min.time(), tzinfo=taiwan_tz)
 
         # Format times for API (format: yyyy-MM-ddThh:mm:ss)
         time_from = start_time.strftime('%Y-%m-%dT%H:%M:%S')
@@ -184,19 +184,11 @@ class WeatherService:
                     else:
                         period_label = "昨晚"  # Past night period
                 elif start_time_tw.date() == (current_time_tw + timedelta(days=1)).date():
-                    # Period starts tomorrow
+                    # Period starts tomorrow (next calendar day)
                     if is_daytime:
-                        # After midnight (00:00-05:59), tomorrow's daytime becomes today's daytime
-                        if current_time_tw.hour < 6:
-                            period_label = "今天白天"
-                        else:
-                            period_label = "明天白天"
+                        period_label = "明天白天"
                     else:
-                        # After midnight (00:00-05:59), tomorrow's night becomes tonight
-                        if current_time_tw.hour < 6:
-                            period_label = "今晚"
-                        else:
-                            period_label = "明晚"
+                        period_label = "明晚"
                 else:
                     # Generic labels for other cases
                     if is_daytime:
