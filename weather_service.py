@@ -178,8 +178,11 @@ class WeatherService:
                 print(f"[DEBUG] Period {period_idx + 1}: start={start_time_tw}, current={current_time_tw}")
                 print(f"[DEBUG] start_date={start_date}, current_date={current_date}, date_diff={date_diff}, hour={hour}")
 
-                # Simplified logic based on period start hour and date difference
-                if 6 <= hour < 18:
+                # Simplified logic based on period start hour
+                if 0 <= hour < 6:
+                    # Early morning (00:00-06:00) - always part of last night
+                    period_label = "昨晚"
+                elif 6 <= hour < 18:
                     # Daytime period (06:00-18:00)
                     if date_diff == 0:
                         period_label = "今天白天"
@@ -188,7 +191,7 @@ class WeatherService:
                     else:
                         period_label = "白天"
                 else:
-                    # Night period (18:00-06:00)
+                    # Evening/night period (18:00-24:00)
                     if date_diff == 0:
                         period_label = "今晚"
                     elif date_diff == -1:
